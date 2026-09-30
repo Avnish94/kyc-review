@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// SQLite has no native enums; allowed values are defined in src/lib/kyc/types.ts.
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String
+  role         String // ANALYST | ADMIN
+  passwordHash String
+  createdAt    DateTime     @default(now())
+  auditEvents  AuditEvent[]
+}
+
+model KycCase {
+  id                 String       @id @default(cuid())
+  caseRef            String       @unique
+  customerName       String
+  customerType       String // INDIVIDUAL | BUSINESS
+  dateOfBirth        DateTime?
+  incorporationDate  DateTime?
+  nationality        String
+  countryOfResidence String
+  email              String
+  phone              String
+  address            String
+  occupation         String
+  documentType       String
+  documentNumber     String // masked, synthetic
+  expectedMonthlyVolume Int
+  riskScore          Int
+  riskLevel          String // LOW | MEDIUM | HIGH
+  reviewReason       String
+  reasonDetail       String
+  status             String // PENDING_REVIEW | INFO_REQUESTED | APPROVED | REJECTED
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  auditEvents        AuditEvent[]
+
+  @@index([status])
+  @@index([riskLevel])
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  caseId     String
+  actorId    String
+  action     String
+  fromStatus String?
+  toStatus   String
+  note       String?
+  createdAt  DateTime @default(now())
+  case       KycCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  actor      User     @relation(fields: [actorId], references: [id])
+
+  @@index([caseId, createdAt])
+}
