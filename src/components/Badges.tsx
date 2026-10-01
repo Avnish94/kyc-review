@@ -1,9 +1,10 @@
-import { labelFor } from "@/lib/format";
-import { RISK_LABELS, STATUS_LABELS } from "@/lib/kyc/types";
+import { formatDateTime, labelFor } from "@/lib/format";
+import { RISK_LABELS, STATUS_LABELS, isOpenStatus } from "@/lib/kyc/types";
 
 const STATUS_STYLES: Record<string, string> = {
   PENDING_REVIEW: "bg-blue-50 text-blue-700 ring-blue-600/20",
   INFO_REQUESTED: "bg-amber-50 text-amber-800 ring-amber-600/20",
+  PENDING_APPROVAL: "bg-violet-50 text-violet-700 ring-violet-600/20",
   APPROVED: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
   REJECTED: "bg-rose-50 text-rose-700 ring-rose-600/20",
 };
@@ -34,5 +35,29 @@ export function RiskScore({ score, riskLevel }: { score: number; riskLevel: stri
         <div className={`h-full ${SCORE_BAR[riskLevel] ?? "bg-slate-400"}`} style={{ width: `${score}%` }} />
       </div>
     </div>
+  );
+}
+
+function relative(ms: number): string {
+  const hours = Math.round(Math.abs(ms) / 3_600_000);
+  if (hours < 1) return "<1h";
+  if (hours < 48) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
+/** SLA indicator for open cases: overdue, due within 24h, or time remaining. */
+export function DueBadge({ dueAt, status, now }: { dueAt: Date; status: string; now: Date }) {
+  if (!isOpenStatus(status)) return <span className="text-xs text-slate-400">—</span>;
+  const diff = dueAt.getTime() - now.getTime();
+  const style =
+    diff < 0
+      ? "bg-red-600 text-white ring-red-700"
+      : diff < 24 * 3_600_000
+        ? "bg-amber-50 text-amber-800 ring-amber-600/30"
+        : "bg-slate-50 text-slate-600 ring-slate-500/20";
+  return (
+    <span className={`${base} ${style}`} title={`Due ${formatDateTime(dueAt)}`}>
+      {diff < 0 ? `Overdue ${relative(diff)}` : `Due in ${relative(diff)}`}
+    </span>
   );
 }

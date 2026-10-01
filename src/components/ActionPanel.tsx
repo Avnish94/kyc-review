@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
-import { submitCaseAction, type ActionFormState } from "@/app/cases/[id]/actions";
-import type { CaseAction, CaseStatus } from "@/lib/kyc/types";
+import { submitCaseAction, type FormState } from "@/app/(app)/cases/[id]/actions";
+import { RECOMMENDATIONS, RECOMMENDATION_LABELS, type CaseAction, type CaseStatus } from "@/lib/kyc/types";
 
 export type ActionOption = {
   action: CaseAction;
@@ -24,13 +24,16 @@ const BUTTON_STYLES: Record<CaseAction, string> = {
   REJECT: "bg-rose-600 text-white hover:bg-rose-500",
   REQUEST_INFO: "bg-amber-500 text-white hover:bg-amber-400",
   MARK_INFO_RECEIVED: "bg-indigo-600 text-white hover:bg-indigo-500",
+  SUBMIT_FOR_APPROVAL: "bg-violet-600 text-white hover:bg-violet-500",
+  SEND_BACK: "bg-slate-600 text-white hover:bg-slate-500",
   REOPEN: "bg-slate-700 text-white hover:bg-slate-600",
 };
 
 export function ActionPanel({ caseId, status, options, maxNoteLength }: Props) {
-  const [state, formAction, pending] = useActionState<ActionFormState, FormData>(submitCaseAction, {});
+  const [state, formAction, pending] = useActionState<FormState, FormData>(submitCaseAction, {});
   const blocked = options.filter((o) => !o.allowed);
   const requiresNote = options.filter((o) => o.allowed && o.noteRequired).map((o) => o.label);
+  const canSubmit = options.some((o) => o.action === "SUBMIT_FOR_APPROVAL" && o.allowed);
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -42,6 +45,19 @@ export function ActionPanel({ caseId, status, options, maxNoteLength }: Props) {
         <form action={formAction} className="mt-3 space-y-3">
           <input type="hidden" name="caseId" value={caseId} />
           <input type="hidden" name="expectedStatus" value={status} />
+          {canSubmit && (
+            <fieldset>
+              <legend className="text-sm font-medium text-slate-700">Recommendation (for approval)</legend>
+              <div className="mt-1 flex flex-wrap gap-4">
+                {RECOMMENDATIONS.map((r) => (
+                  <label key={r} className="flex items-center gap-2 text-sm text-slate-700">
+                    <input type="radio" name="recommendation" value={r} className="text-indigo-600" />
+                    {RECOMMENDATION_LABELS[r]}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
           <div>
             <label htmlFor="note" className="block text-sm font-medium text-slate-700">Reviewer note</label>
             <textarea

@@ -12,14 +12,20 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const session = await verifySession(cookieStore.get(SESSION_COOKIE)?.value);
   if (!session) return null;
 
-  // Re-read the user so role changes or deleted users take effect immediately.
+  // Re-read the user so role changes or deactivated users take effect immediately.
   const user = await prisma.user.findUnique({ where: { id: session.userId } });
-  if (!user || !isRole(user.role)) return null;
+  if (!user || !user.active || !isRole(user.role)) return null;
   return { id: user.id, name: user.name, email: user.email, role: user.role };
 }
 
 export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  return user;
+}
+
+export async function requireAdmin(): Promise<CurrentUser> {
+  const user = await requireUser();
+  if (user.role !== "ADMIN") redirect("/cases");
   return user;
 }

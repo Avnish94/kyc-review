@@ -1,208 +1,277 @@
-# KYC Review — internal tool proof of concept
+# KYC Review — internal compliance application
 
-A working prototype of an internal **KYC (Know Your Customer) review queue** for a hypothetical Series C fintech.
-Compliance analysts sign in, work through a queue of customers flagged by automated screening, review each
-case, and approve / reject / request more information. Every decision is recorded in an audit trail.
+An internal **KYC (Know Your Customer) review** application for a hypothetical Series C fintech, built to evaluate
+whether a custom application can replace a Microsoft Power Apps KYC solution. Compliance analysts work a queue of
+customers flagged by screening, gather evidence, and approve / reject / request more information; high-risk
+decisions go through four-eyes approval; every action lands in an append-only audit trail.
 
-> **Prototype only.** Authentication and authorization are mock implementations for demonstration. They are
-> **not** production-grade security. All customer data is **synthetic** (generated with Faker); the app does
-> not connect to any real customer, KYC, banking or payment system.
+> **Not production-ready.** Password login is **mock authentication** for demos. Microsoft Entra ID sign-in,
+> Azure Blob storage, screening webhooks and Teams notifications are implemented but have only been exercised
+> against local mocks. All data is **synthetic** (Faker); nothing connects to a real customer, KYC, screening,
+> banking or payment system.
 
 ![Queue](docs/screenshots/queue.png)
 
 ## Quick start
 
-Requirements: **Node.js 20+** and npm. No database server is needed (SQLite file).
+Requirements: **Node.js 20+**, npm and **Docker** (for PostgreSQL).
 
 ```bash
-npm install          # also runs `prisma generate`
-cp .env.example .env # local dev defaults (SQLite path + dev-only session secret)
-npm run setup        # creates prisma/dev.db, applies migrations, seeds synthetic data
-npm run dev          # http://localhost:3000
+docker compose up -d       # PostgreSQL 16 on :5432 (databases kyc and kyc_test)
+npm install                # also runs `prisma generate`
+cp .env.example .env       # local defaults: Postgres URL, dev-only secrets, local file storage
+npm run setup              # apply migrations + seed synthetic data
+npm run dev                # http://localhost:3000
 ```
 
-Reset the demo data at any time with `npm run db:reset`.
+Optional local integrations (no credentials needed):
+
+```bash
+npm run mock:oidc                  # mock "Sign in with Microsoft" on :4010 (see Entra section)
+npm run simulate:screening -- 3    # send 3 signed synthetic screening alerts to the app
+```
 
 | Script | Purpose |
 | --- | --- |
-| `npm run dev` | Start the dev server |
-| `npm run build` / `npm start` | Production build / serve |
-| `npm test` | Unit + integration tests (Vitest, uses a throwaway `prisma/test.db`) |
+| `npm run dev` / `npm run build` / `npm start` | Dev server / production build / serve |
+| `npm test` | Unit + integration tests (Vitest; recreates the `kyc_test` database from migrations) |
+| `npm run test:e2e` | Playwright golden-path tests (run `npm run build` first; **resets and reseeds `DATABASE_URL`**) |
 | `npm run lint` / `npm run typecheck` | ESLint / TypeScript |
-| `npm run db:reset` | Drop, re-migrate and re-seed the local database |
+| `npm run db:reset` / `npm run db:migrate` | Drop + re-migrate + re-seed (dev) / apply pending migrations (deploy) |
+| `npm run mock:oidc` | Local OpenID Connect provider imitating Entra ID |
+| `npm run simulate:screening -- [n]` | Signed synthetic webhook alerts |
+| `npm run outbox:dispatch` | Deliver pending Teams notifications (scheduled job in Azure) |
 
 ## Demo credentials
 
-| Role | Email | Password | Can do |
+| Role | Email | Password | Notes |
 | --- | --- | --- | --- |
-| Analyst | `analyst@demo.local` | `analyst123` | View queue, request info, approve/reject **Low/Medium** risk cases |
-| Analyst | `analyst2@demo.local` | `analyst123` | Same as above (second reviewer for demos) |
-| Admin | `admin@demo.local` | `admin123` | Everything an Analyst can do, plus decide **High** risk cases and **reopen** decided cases |
+| Analyst | `analyst@demo.local` | `analyst123` | Ava Chen — has assigned cases, including high-risk ones needing evidence |
+| Analyst | `analyst2@demo.local` | `analyst123` | Sam Patel — second analyst for assignment demos |
+| Admin | `admin@demo.local` | `admin123` | Marcus Reid — approvals, rules, exports |
+| Admin | `admin2@demo.local` | `admin123` | Dana Brooks — second Admin for four-eyes demos |
 
-The credentials are also shown on the login page.
+With `npm run mock:oidc` running and the mock Entra variables set (see below), **Sign in with Microsoft** offers
+Priya Nair (`KYC.Analyst`), Jordan Lee (`KYC.Admin`) and Casey Morgan (no role — refused).
 
-### Suggested demo script (≈3 minutes)
+### Suggested demo script (≈5 minutes)
 
-1. Sign in as the **Analyst**. Show the queue: status summary cards, search (name / case ref / email), and the status + risk filters.
-2. Filter to **High risk + Pending review** and open a case. Approve/Reject are disabled with the reason "High-risk decisions require an Admin".
-3. Click **Request more info** without a note → validation error. Add a note and submit → status changes and a new audit entry appears.
-4. Sign out, sign in as the **Admin**, open the same case: **Mark info received** → **Approve**. The audit history shows the full trail, with who did what and when.
-5. As Admin, **Reopen** the decided case (note required). Sign back in as the Analyst to show that Reopen is Admin-only.
+1. **Analyst** → *My open cases*. Show SLA badges, the overdue view, search and filters.
+2. Open a **High risk** case assigned to Ava (e.g. `KYC-2026-0005`). Approve/Reject are replaced by
+   **Submit for approval**. The evidence checklist shows what the review reason requires; submitting an approval
+   recommendation is blocked until it is uploaded. Upload a PDF, recommend approval, submit.
+3. Sign in as **Admin** (Marcus). The bell shows a notification; open the case and **Approve**. Try the same with
+   a case *you* submitted to see the four-eyes block ("a different Admin must decide it").
+4. **Audit history** shows every step: actor, role, status change, recommendation, rule version, notes, uploads.
+5. **Rules** (Admin): change an SLA or the evidence matrix, publish v2, and show it applies immediately.
+6. **Dashboard**: aging, SLA compliance, throughput, reviewer stats, and CSV exports.
+7. Run `npm run simulate:screening -- 2` and show new cases arriving "via screening webhook".
 
 ## Features
 
-- **Mock login** with two roles (Analyst, Admin) and a signed, HTTP-only session cookie.
-- **Review queue** of 60 seeded synthetic cases: customer, case ref, risk score, risk level, reason for review, status, last updated; server-side search and filtering via URL query params (shareable/bookmarkable).
-- **Case detail**: reason for review with risk score, customer profile, KYC document info (masked), decision panel and audit timeline.
-- **Enforced workflow**: only valid status transitions are offered or accepted; role rules are enforced on the server.
-- **Audit history**: every status change writes an append-only audit record (actor, action, from → to status, note, timestamp) in the same DB transaction.
-- **Local persistence** in a SQLite file, so demo actions survive restarts.
+| Area | What's implemented |
+| --- | --- |
+| Queue | Status cards; views *All / My open cases / Unassigned / Awaiting my approval / Overdue*; search (name, case ref, email); status + risk filters; assignee and SLA columns. URL-driven, filtered in the database. |
+| Case review | Customer profile, screening reason and score, masked document info, assignment panel, evidence, decision panel, audit timeline. |
+| Workflow | Enforced state machine, configurable note requirements, optimistic-concurrency protection against stale pages. |
+| Ownership | Claim / unassign / Admin reassign; analysts can only act on cases assigned to them. |
+| Four-eyes | Configured risk levels must be submitted with a recommendation and decided by a **different** Admin. |
+| SLA | Due dates from the active rules per risk level; overdue badges and view; clock restarts on reopen. |
+| Evidence | Upload PDF/PNG/JPEG (type checked by magic bytes, 10 MB max, SHA-256 recorded); per-reason checklist; optional approval gate. Local disk or Azure Blob storage. |
+| Rules as data | Admin editor for thresholds, approval matrix, four-eyes levels, SLA hours, required notes and evidence. Published versions are immutable and recorded on every audit event. |
+| Identity | Mock password login and/or Microsoft Entra ID (OIDC + PKCE) with app-role → role mapping and just-in-time provisioning. |
+| Screening | `POST /api/webhooks/screening`, HMAC-signed with replay window, idempotent on event ID and alert ID. |
+| Notifications | In-app notifications; Teams Adaptive Cards via a transactional outbox with retries. |
+| Reporting | Dashboard (open, overdue, awaiting approval, SLA met, time to decision, aging, 14-day throughput, reviewer stats); Admin CSV export of cases and the audit log. |
+| Operations | `/api/health`, security headers, Dockerfile (standalone, non-root), GitHub Actions CI, Azure Bicep groundwork. |
 
 ## Business rules
 
 ### Status transitions
 
 ```
-                    ┌──────── Request info (note) ───────┐
-                    │                                    ▼
-             ┌──────────────┐                    ┌────────────────┐
-  created ──▶│ PENDING_REVIEW│◀─ Mark info rec'd ─│ INFO_REQUESTED │
-             └──────────────┘                    └────────────────┘
-               │         │                                │
-       Approve │         │ Reject (note)                  │ Reject (note)
-               ▼         ▼                                ▼
-         ┌──────────┐ ┌──────────┐ ◀──────────────────────┘
-         │ APPROVED │ │ REJECTED │
-         └──────────┘ └──────────┘
-               └─────┬─────┘
-                     └── Reopen (Admin only, note) ──▶ PENDING_REVIEW
+                     ┌──── Request info ────▶ INFO_REQUESTED ──── Reject ───────────────┐
+                     │◀─── Mark info received ──────┘                                    │
+  created ─▶ PENDING_REVIEW ── Approve / Reject (non-four-eyes risk) ─▶ APPROVED / REJECTED
+                     │                                                    ▲         │
+                     └── Submit for approval ─▶ PENDING_APPROVAL ─────────┘         │
+                         (four-eyes risk,         │  Approve / Reject (different Admin)
+                          recommendation)         └── Send back ─▶ PENDING_REVIEW    │
+                                                                                     │
+                     APPROVED / REJECTED ── Reopen (Admin) ─▶ PENDING_REVIEW ◀───────┘
 ```
 
-| From | Action | To | Note |
+| From | Action | To | Default rule |
 | --- | --- | --- | --- |
-| Pending review | Approve | Approved | optional |
-| Pending review | Reject | Rejected | **required** |
-| Pending review | Request more info | Info requested | **required** |
-| Info requested | Mark info received | Pending review | optional |
-| Info requested | Reject | Rejected | **required** |
-| Approved / Rejected | Reopen | Pending review | **required** |
+| Pending review | Approve | Approved | Not for four-eyes risk levels; required evidence present |
+| Pending review | Reject | Rejected | Note required; not for four-eyes risk levels |
+| Pending review | Request more info | Info requested | Note required |
+| Pending review | Submit for approval | Pending approval | Four-eyes risk levels only; recommendation + note required; approve recommendations need evidence |
+| Info requested | Mark info received | Pending review | — |
+| Info requested | Reject | Rejected | Note required |
+| Pending approval | Approve / Reject | Approved / Rejected | Admin who did **not** submit it |
+| Pending approval | Send back | Pending review | Admin, note required |
+| Approved / Rejected | Reopen | Pending review | Admin, note required; new SLA due date |
 
-Anything else (for example approving directly from *Info requested*, or rejecting an approved case) is refused.
-The *Mark info received* action stands in for the customer responding, since there is no customer portal.
-
-### Permissions
+### Permissions (default rule set v1)
 
 | Action | Analyst | Admin |
 | --- | --- | --- |
-| View queue and cases | ✓ | ✓ |
-| Request more info / Mark info received | ✓ | ✓ |
-| Approve / Reject — Low & Medium risk | ✓ | ✓ |
-| Approve / Reject — **High** risk | ✗ | ✓ |
-| Reopen a decided case | ✗ | ✓ |
+| View queue, cases, dashboard | ✓ | ✓ |
+| Claim an unassigned case / unassign own case | ✓ | ✓ |
+| Assign or reassign to someone else | ✗ | ✓ |
+| Act on / upload to a case | Only when assigned to them | Any open case |
+| Approve / Reject Low & Medium risk | ✓ | ✓ |
+| Submit High risk for approval | ✓ | ✓ |
+| Decide a pending approval | ✗ | ✓ (not their own submission) |
+| Reopen, edit rules, export CSV | ✗ | ✓ |
 
-Risk level comes from the screening risk score: `0–39 Low`, `40–69 Medium`, `70–100 High`.
+Default thresholds: score `0–39` Low, `40–69` Medium, `70–100` High. Default SLAs: High 24h, Medium 72h, Low 120h.
+
+## Integrations
+
+All integrations are off or mocked by default and switched on with environment variables (see `.env.example`).
+
+### Microsoft Entra ID sign-in
+
+1. Create an app registration (single tenant, *Web* platform) with redirect URI `https://<host>/auth/entra/callback`.
+2. Under **App roles**, add `KYC.Analyst` and `KYC.Admin` (allowed member type: users/groups) and assign them to
+   users or groups in *Enterprise applications*. Admin wins if both are assigned; users with neither are refused.
+3. Set `AUTH_ENTRA_TENANT_ID`, `AUTH_ENTRA_CLIENT_ID`, `AUTH_ENTRA_CLIENT_SECRET`. Password login switches off
+   automatically unless `AUTH_MOCK_ENABLED=true`.
+
+The flow is authorization code + PKCE with `state` and `nonce`; the ID token is verified against the tenant JWKS
+(issuer, audience, expiry). Users are matched by Entra object ID (then email), provisioned just in time, and their
+role and name are re-synced on every sign-in. Deactivated users (`active = false`) are refused, and every request
+re-reads the user from the database.
+
+Local mock: run `npm run mock:oidc` and set `AUTH_OIDC_ISSUER=http://localhost:4010`,
+`AUTH_ENTRA_CLIENT_ID=kyc-review-local`, `AUTH_ENTRA_CLIENT_SECRET=mock-secret`, `AUTH_MOCK_ENABLED=true`.
+
+### Screening webhook
+
+`POST /api/webhooks/screening` with header `x-kyc-signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`
+using `SCREENING_WEBHOOK_SECRET`, and optionally `x-kyc-provider: <name>`. Signatures older than 5 minutes are
+rejected; bodies are limited to 64 KB.
+
+```json
+{
+  "eventId": "evt_123", "alertId": "alert_456", "occurredAt": "2026-10-01T09:00:00Z",
+  "customer": { "name": "…", "type": "INDIVIDUAL", "dateOfBirth": "1980-05-01", "nationality": "Canada",
+                "countryOfResidence": "Canada", "email": "…", "phone": "…", "address": "…",
+                "occupation": "…", "documentType": "Passport", "documentNumberLast4": "1234" },
+  "alert": { "reason": "PEP_MATCH", "score": 85, "detail": "…" }
+}
+```
+
+Responses: `201` created, `200` duplicate (same `eventId` or `alertId`), `401` bad signature, `422` invalid
+payload. A real vendor (ComplyAdvantage, World-Check, …) needs a small adapter mapping its payload and signature
+scheme to this contract.
+
+### Teams notifications
+
+Set `TEAMS_WEBHOOK_URL` to a Teams *Workflows* "When a Teams webhook request is received" URL. Messages (submitted
+for approval, decision on your submission, high-risk screening alert) are written to `OutboxMessage` in the same
+transaction as the business change, sent right after, and retried by `npm run outbox:dispatch` up to 5 attempts.
+Without a URL they are marked `SKIPPED`. In-app notifications (bell icon) always work.
+
+### Document storage
+
+`STORAGE_DRIVER=local` (default) writes to `LOCAL_STORAGE_DIR`. `STORAGE_DRIVER=azure` uses
+`AZURE_STORAGE_CONNECTION_STRING` + `AZURE_STORAGE_CONTAINER`; `docker compose --profile azure up -d` starts Azurite
+for local testing. Documents are served only to signed-in users through `/api/documents/<id>` with `no-store`
+and a restrictive CSP.
 
 ## Architecture
 
 ```
-Browser
-  │  HTML (React Server Components) + small client components (forms, filters)
-  ▼
-Next.js 15 (App Router, single Node process)
-  ├─ middleware.ts ─────────── redirects to /login when there's no valid session cookie
-  ├─ app/login, app/cases ──── pages (server components read data directly)
-  ├─ Server Actions ────────── login/logout, submitCaseAction
-  │        │
-  │        ▼
-  ├─ lib/kyc/service.ts ────── performCaseAction: transaction { re-check status → evaluate → update → audit }
-  │        │
-  │        ├─ lib/kyc/workflow.ts ── pure state machine: transition table + note rules
-  │        └─ lib/authz.ts ───────── pure role policy: canPerformAction(role, action, riskLevel)
-  ▼
-Prisma ORM ──▶ SQLite (prisma/dev.db)
+Browser ── React Server Components + small client forms
+   │
+Next.js 15 (App Router, one Node process)
+   ├─ middleware.ts ──────────── session gate (public: /login, /auth/*, /api/health, /api/webhooks/*)
+   ├─ app/(app)/* ────────────── queue, case detail, dashboard, notifications, admin/rules
+   ├─ Server Actions ─────────── decisions, assignment, uploads, rule publishing
+   ├─ Route handlers ─────────── Entra callback, screening webhook, documents, CSV export, health
+   │
+   ├─ lib/kyc/service.ts ─────── transaction { load → rules → authz + workflow → compare-and-set update
+   │                                            → audit event → notifications → outbox }
+   │     ├─ lib/kyc/workflow.ts ── pure state machine (transitions, notes, four-eyes, evidence)
+   │     ├─ lib/authz.ts ──────── pure policy (role, assignment, configured approval matrix)
+   │     └─ lib/rules/* ───────── versioned rule sets (Zod-validated JSON)
+   ├─ lib/documents/* ────────── validation, storage adapters (local / Azure Blob), upload service
+   ├─ lib/integrations/* ─────── webhook signatures, screening ingestion
+   ├─ lib/notifications ──────── in-app + Teams outbox
+   └─ lib/auth/* ─────────────── sessions, mock login, OIDC, SSO provisioning
+   │
+Prisma ──▶ PostgreSQL 16 (native enums; AuditEvent append-only trigger)
 ```
 
-All business rules live in two small, framework-free modules — `src/lib/kyc/workflow.ts` and
-`src/lib/authz.ts`. The UI uses them to decide which buttons to show or disable (and why); the service layer calls
-them again on the server before any write, so the UI is never the enforcement point.
+Business rules are framework-free and run identically in the UI (to show, hide or explain actions), the service
+layer (enforcement inside the transaction) and the seed script (so synthetic history obeys the same rules).
 
 ### Project structure
 
 ```
-prisma/
-  schema.prisma            User, KycCase, AuditEvent
-  migrations/              SQL migrations (Prisma Migrate)
-  seed.ts                  deterministic synthetic data; history replayed through the real workflow rules
-src/
-  middleware.ts            session gate
-  app/
-    login/                 login page + client form
-    cases/layout.tsx       authenticated shell (header, role badge, sign out)
-    cases/page.tsx         review queue (search, filters, summary cards)
-    cases/[id]/page.tsx    case detail
-    cases/[id]/actions.ts  Server Action for review decisions
-  components/              ActionPanel, AuditTimeline, CaseFilters, Badges
-  lib/
-    auth/                  session (JWT sign/verify), current-user, login/logout actions
-    authz.ts               role-based permission policy
-    kyc/types.ts           enums, labels, risk-level mapping
-    kyc/workflow.ts        status state machine
-    kyc/service.ts         transactional action + audit write
-    kyc/queries.ts         queue / detail read queries
-tests/
-  authz.test.ts            permission matrix
-  workflow.test.ts         every (status × action) combination + note rules
-  service.test.ts          DB integration: atomic audit, forbidden, invalid, stale-conflict, not-found
+prisma/schema.prisma, migrations/, seed.ts
+src/middleware.ts
+src/app/login/                     login (mock form and/or "Sign in with Microsoft")
+src/app/auth/entra/{start,callback}  OIDC flow
+src/app/(app)/layout.tsx           authenticated shell (nav, notifications, user)
+src/app/(app)/cases/               queue, case detail, server actions
+src/app/(app)/dashboard/           reporting
+src/app/(app)/admin/rules/         rule editor + version history
+src/app/(app)/notifications/
+src/app/api/                       health, documents, export/{cases,audit}, webhooks/screening
+src/components/                    ActionPanel, AssignmentPanel, DocumentsPanel, AuditTimeline, …
+src/lib/                           authz, kyc/, rules/, documents/, integrations/, notifications/, auth/, reporting
+scripts/                           mock-oidc, simulate-screening, dispatch-outbox, synthetic-pdf
+tests/                             Vitest unit + Postgres integration tests
+e2e/                               Playwright golden paths
+infra/main.bicep                   Azure groundwork
+.github/workflows/ci.yml           lint, typecheck, tests, build, E2E, Docker build
 ```
 
 ### Data model
 
-- **User** — `email`, `name`, `role` (`ANALYST` | `ADMIN`; the seed also creates a non-login `SYSTEM` user that authors "Case created" events), `passwordHash` (bcrypt).
-- **KycCase** — `caseRef`, customer identity fields, masked document info, `riskScore`, `riskLevel`, `reviewReason`, `reasonDetail`, `status`, timestamps.
-- **AuditEvent** — `caseId`, `actorId`, `action`, `fromStatus`, `toStatus`, `note`, `createdAt`. Rows are only ever inserted; the app has no update or delete path for them.
+- **User** — email, name, role (`ANALYST` / `ADMIN` / `SYSTEM`), optional password hash (mock login), optional `entraObjectId`, `active`, `lastLoginAt`.
+- **KycCase** — sequential `caseNumber` + `caseRef`, customer identity, masked document, `riskScore`, `riskLevel`, `reviewReason`, `status`, `assigneeId`, `submittedById` + `recommendation` (four-eyes), `dueAt`, `decidedAt`, `source` (`SEED` / `SCREENING_WEBHOOK`), `externalRef` (unique alert ID).
+- **AuditEvent** — case, actor, action, from/to status, note, `ruleSetVersion`, JSON metadata. A database trigger rejects `UPDATE` and `DELETE`.
+- **CaseDocument** — category, file name, content type, size, SHA-256, storage key, uploader.
+- **RuleSet** — `version`, JSON config, comment, author. Highest version is active.
+- **Notification**, **OutboxMessage** (status, attempts, last error), **WebhookEvent** (unique provider + event ID).
 
 ### Key technical decisions
 
 | Decision | Why |
 | --- | --- |
-| **Next.js (App Router) + TypeScript**, one app | Full-stack in one language and process; Server Actions remove the need for a separate REST layer. Closest familiar replacement for a Power Apps form-over-data app. |
-| **SQLite + Prisma** | Zero setup for a demo, typed queries, real migrations. Moving to Postgres is mostly a `provider` change. |
-| **Pure workflow + authz modules** | Business rules are easy to read, reuse (UI, service, seed) and exhaustively unit-test without a DB or framework. |
-| **Transaction with compare-and-set on status** | Status change and its audit record commit together; a user acting on a stale page gets a clear "updated by someone else" error rather than silently overwriting. |
-| **Signed JWT cookie (`jose`) + bcrypt** | Mock auth that still follows real patterns (hashed passwords, HTTP-only cookie, server-side re-validation of the user on every request). |
-| **URL-driven filters** | Queue state is shareable and back-button friendly, and filtering happens in the database. |
-| **Deterministic Faker seed** | Same data on every reset; seeded histories go through `evaluateAction`, so demo data can never violate the rules. |
+| One Next.js + TypeScript app | One language, one deployable; Server Actions avoid a separate API for UI writes. Route handlers exist only where external callers need them. |
+| PostgreSQL + Prisma, native enums | Database-enforced value sets, `ILIKE` search, real transactions; a test checks the TypeScript constants match the DB enums. |
+| Rules as versioned JSON (Zod) | Business users can change policy without a deploy — the main Power Apps advantage — while every decision stays attributable to an exact rule version. |
+| Pure workflow/authz modules | Exhaustively unit-tested, reused by UI, service and seed. |
+| Compare-and-set updates in one transaction | Status change, audit, notifications and outbox commit together; stale pages get a clear conflict. |
+| Append-only trigger on `AuditEvent` | Tamper resistance even against application bugs (not against a DB superuser). |
+| Transactional outbox for Teams | A Teams outage can never roll back or block a compliance decision; delivery is retried. |
+| Storage behind an interface | Local disk for demos and tests, Azure Blob in Azure, no code changes. |
+| Mock OIDC provider | The real Entra code path (discovery, PKCE, JWKS verification, role mapping) runs locally and in CI. |
 
-### Compromises made for the 2-hour scope
+### Compromises and notes
 
-- **SQLite has no enums**, so statuses, roles, etc. are stored as strings and validated in TypeScript (`src/lib/kyc/types.ts`) instead of by the database.
-- **Search** uses SQLite `LIKE` (case-insensitive for ASCII only). There is no pagination, since 60 rows don't need it.
-- **Session secret** defaults to a dev-only value in `.env.example`. Sessions are stateless JWTs, so logout clears the cookie but can't revoke a copied token before it expires (8h).
-- **Middleware** uses the Node.js runtime (`runtime: "nodejs"`) to avoid Edge-runtime warnings from `jose`. It only checks the cookie signature; pages then re-load the user from the DB.
-- **Timestamps** are shown in UTC to keep server rendering deterministic.
-- **"Mark info received"** is an analyst action that stands in for a customer-facing document upload flow.
-- **Tests** cover business logic and the service layer. There are no automated browser (E2E) tests.
+- **Entra, Azure Blob, Teams and a real screening vendor have not been tested against the real services** — only against the mock OIDC provider, local disk/Azurite-compatible code and stubbed fetches.
+- **Mock login** remains available unless Entra is configured. Sessions are stateless signed cookies (8h); signing out cannot revoke a copied cookie, though deactivated users are blocked on the next request.
+- **Rule changes are not retroactive**: existing cases keep their risk level and due date; new thresholds apply to new alerts, new SLAs to new or reopened cases.
+- **"Mark info received"** still stands in for a customer outreach/portal flow.
+- **Dashboard** aggregates some metrics in application code (fine at pilot volumes; move to SQL views for scale). No pagination on the queue yet.
+- **Business customers** have no linked directors/UBOs yet; periodic re-KYC scheduling is not implemented.
+- **Bicep** compiles but has not been deployed; secrets are Container Apps secrets rather than Key Vault references, and Postgres is reachable from Azure services rather than a private network.
+- **Times** are shown in UTC. No malware scanning of uploads.
+- The E2E suite resets and reseeds the database in `DATABASE_URL`.
 
-## What's needed before production
+## What's still needed before production
 
-**Security and identity**
-- Replace mock login with the company IdP (SSO via OIDC/SAML, e.g. Entra ID / Okta) and MFA; map IdP groups to roles.
-- Server-side session store or short-lived tokens with revocation; secret management (KMS/Vault); rotate secrets.
-- CSRF review beyond Next.js Server Action defaults, rate limiting, security headers/CSP, dependency and container scanning.
-- Fine-grained authorization (for example case assignment, four-eyes approval so the requester can't also approve, and data scoping by region or entity).
+**Security and identity** — Key Vault references and managed identity for storage/DB; private networking; session revocation or short-lived sessions; CSP for the app pages; rate limiting; upload malware scanning; pen test; disable mock login in all shared environments.
 
-**Data and compliance**
-- Managed Postgres with backups, point-in-time recovery, encryption at rest, and field-level encryption or tokenization for PII.
-- Tamper-evident audit log (DB-level append-only permissions or hash chaining, or ship events to a WORM/SIEM store); also log logins and case views.
-- Data retention and deletion policies (GDPR/CCPA), PII masking in logs, and access reviews.
-- Real integrations: screening/KYC vendors, document storage and viewer, customer outreach for information requests, case-management webhooks.
+**Data and compliance** — field-level encryption/tokenization of PII; PII access logging (who viewed what); retention and deletion policies; immutable audit export to WORM storage/SIEM; data residency review; access reviews.
 
-**Product**
-- Case assignment and locking, SLAs and ageing, escalation queues, bulk actions, pagination and sorting, reporting and dashboards.
-- Reason codes (structured rejection reasons), attachments, richer customer history.
-- Accessibility audit (WCAG 2.1 AA), responsive polish, i18n and time-zone handling.
+**Product** — customer outreach for information requests; directors/UBOs and periodic re-KYC; structured rejection reason codes; bulk actions, pagination and sorting; Dataverse migration of existing cases and audit history; accessibility (WCAG 2.1 AA) audit.
 
-**Engineering and operations**
-- CI (lint, typecheck, tests, build), E2E tests (e.g. Playwright), preview environments.
-- Containerization, IaC, environment configuration, migrations in the deploy pipeline.
-- Observability: structured logging, metrics, tracing, error tracking, alerting.
+**Operations** — deploy pipeline with staging/prod and migration job; preview environments; structured logging, metrics, tracing and alerting; backups/PITR drills; on-call ownership.

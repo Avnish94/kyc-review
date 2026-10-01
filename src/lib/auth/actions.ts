@@ -4,8 +4,10 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { setSessionCookie } from "@/lib/auth/cookies";
+import { isMockLoginEnabled } from "@/lib/auth/oidc";
+import { SESSION_COOKIE } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
-import { SESSION_COOKIE, SESSION_TTL_SECONDS, signSession } from "@/lib/auth/session";
 import { isRole } from "@/lib/kyc/types";
 
 export type LoginState = { error?: string; email?: string };
@@ -18,6 +20,8 @@ const loginSchema = z.object({
 const INVALID_CREDENTIALS = "Invalid email or password.";
 
 export async function login(_prev: LoginState, formData: FormData): Promise<LoginState> {
+  if (!isMockLoginEnabled()) return { error: "Password sign-in is disabled. Use Microsoft sign-in." };
+
   const parsed = loginSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
@@ -26,18 +30,11 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
   if (!parsed.success) return { error: INVALID_CREDENTIALS, email };
 
   const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-  const passwordOk = user ? await bcrypt.compare(parsed.data.password, user.passwordHash) : false;
-  if (!user || !passwordOk || !isRole(user.role)) return { error: INVALID_CREDENTIALS, email };
+  const passwordOk = user?.passwordHash ? await bcrypt.compare(parsed.data.password, user.passwordHash) : false;
+  if (!user || !passwordOk || !user.active || !isRole(user.role)) return { error: INVALID_CREDENTIALS, email };
 
-  const token = await signSession({ userId: user.id, role: user.role });
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: SESSION_TTL_SECONDS,
-  });
+  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  await setSessionCookie(await cookies(), { userId: user.id, role: user.role });
   redirect("/cases");
 }
 

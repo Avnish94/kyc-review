@@ -12,9 +12,15 @@
     "postinstall": "prisma generate",
     "db:reset": "prisma migrate reset --force",
     "db:seed": "prisma db seed",
-    "setup": "prisma migrate reset --force"
+    "setup": "prisma migrate reset --force",
+    "db:migrate": "prisma migrate deploy",
+    "test:e2e": "playwright test",
+    "mock:oidc": "tsx scripts/mock-oidc.ts",
+    "simulate:screening": "tsx --env-file=.env scripts/simulate-screening.ts",
+    "outbox:dispatch": "tsx scripts/dispatch-outbox.ts"
   },
   "dependencies": {
+    "@azure/storage-blob": "^12.33.0",
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.3",
     "jose": "^6.2.12",
@@ -28,6 +34,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@faker-js/faker": "^10.6.0",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

@@ -18,3 +18,9 @@ export const formatCurrency = (n: number) => currency.format(n);
 export function labelFor<K extends string>(labels: Record<K, string>, value: string): string {
   return (labels as Record<string, string>)[value] ?? value;
 }
+
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}

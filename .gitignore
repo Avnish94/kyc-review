@@ -41,6 +41,13 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local sqlite databases
-/prisma/*.db
-/prisma/*.db-journal
+# local document storage
+/storage
+/storage-e2e
+/dist
+
+# playwright
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache

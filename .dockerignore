@@ -1,0 +1,14 @@
+.git
+.github
+.next
+node_modules
+storage
+storage-e2e
+test-results
+playwright-report
+coverage
+.env
+.env.*
+!.env.example
+*.db
+infra
