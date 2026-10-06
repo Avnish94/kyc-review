@@ -1,0 +1,235 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ANALYST
+  ADMIN
+  SYSTEM
+}
+
+enum CaseStatus {
+  PENDING_REVIEW
+  INFO_REQUESTED
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum CustomerType {
+  INDIVIDUAL
+  BUSINESS
+}
+
+enum ReviewReason {
+  PEP_MATCH
+  SANCTIONS_NEAR_MATCH
+  ADVERSE_MEDIA
+  DOCUMENT_MISMATCH
+  HIGH_RISK_JURISDICTION
+  UNUSUAL_VOLUME
+  PERIODIC_REFRESH
+}
+
+enum Recommendation {
+  APPROVE
+  REJECT
+}
+
+enum AuditAction {
+  CASE_CREATED
+  APPROVE
+  REJECT
+  REQUEST_INFO
+  MARK_INFO_RECEIVED
+  SUBMIT_FOR_APPROVAL
+  SEND_BACK
+  REOPEN
+  ASSIGN
+  UNASSIGN
+  DOCUMENT_UPLOADED
+}
+
+enum DocumentCategory {
+  IDENTITY
+  PROOF_OF_ADDRESS
+  SOURCE_OF_FUNDS
+  CORPORATE_REGISTRY
+  OWNERSHIP_STRUCTURE
+  SCREENING_DISPOSITION
+  OTHER
+}
+
+enum CaseSource {
+  SEED
+  SCREENING_WEBHOOK
+}
+
+enum OutboxStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String
+  role          Role
+  /// Null for users who sign in through Microsoft Entra ID.
+  passwordHash  String?
+  entraObjectId String?        @unique
+  active        Boolean        @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime       @default(now())
+  auditEvents   AuditEvent[]
+  assignedCases KycCase[]      @relation("assignee")
+  submissions   KycCase[]      @relation("submitter")
+  documents     CaseDocument[]
+  notifications Notification[]
+  ruleSets      RuleSet[]
+}
+
+model KycCase {
+  id                    String          @id @default(cuid())
+  caseNumber            Int             @unique @default(autoincrement())
+  caseRef               String          @unique
+  /// Alert ID from the screening provider; used to make webhook ingestion idempotent.
+  externalRef           String?         @unique
+  source                CaseSource      @default(SEED)
+  customerName          String
+  customerType          CustomerType
+  dateOfBirth           DateTime?
+  incorporationDate     DateTime?
+  nationality           String
+  countryOfResidence    String
+  email                 String
+  phone                 String
+  address               String
+  occupation            String
+  documentType          String
+  documentNumber        String // masked, synthetic
+  expectedMonthlyVolume Int
+  riskScore             Int
+  riskLevel             RiskLevel
+  reviewReason          ReviewReason
+  reasonDetail          String
+  status                CaseStatus
+  assigneeId            String?
+  assignee              User?           @relation("assignee", fields: [assigneeId], references: [id])
+  /// Set while a case awaits four-eyes approval; the approver must be a different user.
+  submittedById         String?
+  submittedBy           User?           @relation("submitter", fields: [submittedById], references: [id])
+  recommendation        Recommendation?
+  dueAt                 DateTime
+  decidedAt             DateTime?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  auditEvents           AuditEvent[]
+  documents             CaseDocument[]
+  notifications         Notification[]
+
+  @@index([status])
+  @@index([riskLevel])
+  @@index([assigneeId])
+  @@index([dueAt])
+}
+
+/// Append-only. The application never updates or deletes audit rows.
+model AuditEvent {
+  id             String      @id @default(cuid())
+  caseId         String
+  actorId        String
+  action         AuditAction
+  fromStatus     CaseStatus?
+  toStatus       CaseStatus
+  note           String?
+  /// Rule set version that was in force when the action was evaluated.
+  ruleSetVersion Int?
+  metadata       Json?
+  createdAt      DateTime    @default(now())
+  case           KycCase     @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  actor          User        @relation(fields: [actorId], references: [id])
+
+  @@index([caseId, createdAt])
+  @@index([createdAt])
+}
+
+model CaseDocument {
+  id           String           @id @default(cuid())
+  caseId       String
+  category     DocumentCategory
+  fileName     String
+  contentType  String
+  sizeBytes    Int
+  sha256       String
+  storageKey   String           @unique
+  uploadedById String
+  createdAt    DateTime         @default(now())
+  case         KycCase          @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  uploadedBy   User             @relation(fields: [uploadedById], references: [id])
+
+  @@index([caseId])
+}
+
+/// Versioned business rules. The highest version is active; older versions are kept for audit.
+model RuleSet {
+  id          String   @id @default(cuid())
+  version     Int      @unique
+  config      Json
+  comment     String?
+  createdById String
+  createdAt   DateTime @default(now())
+  createdBy   User     @relation(fields: [createdById], references: [id])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  caseId    String?
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  case      KycCase?  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+/// Transactional outbox for external notifications (e.g. Microsoft Teams).
+model OutboxMessage {
+  id        String       @id @default(cuid())
+  channel   String
+  payload   Json
+  status    OutboxStatus @default(PENDING)
+  attempts  Int          @default(0)
+  lastError String?
+  createdAt DateTime     @default(now())
+  sentAt    DateTime?
+
+  @@index([status, createdAt])
+}
+
+/// Inbound webhook deliveries, recorded for idempotency and troubleshooting.
+model WebhookEvent {
+  id         String   @id @default(cuid())
+  provider   String
+  eventId    String
+  payload    Json
+  receivedAt DateTime @default(now())
+
+  @@unique([provider, eventId])
+}
