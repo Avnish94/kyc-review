@@ -148,6 +148,10 @@ re-reads the user from the database.
 Local mock: run `npm run mock:oidc` and set `AUTH_OIDC_ISSUER=http://localhost:4010`,
 `AUTH_ENTRA_CLIENT_ID=kyc-review-local`, `AUTH_ENTRA_CLIENT_SECRET=mock-secret`, `AUTH_MOCK_ENABLED=true`.
 
+Behind a proxy (e.g. a shared preview URL where only the app port is reachable), build and start the app with
+`MOCK_OIDC_PROXY_TARGET=http://localhost:4010` so `/auth/mock-oidc/*` is served from the app origin, set
+`APP_BASE_URL` to the public app URL, and start the mock with `MOCK_OIDC_PUBLIC_URL=<public app URL>/auth/mock-oidc`.
+
 ### Screening webhook
 
 `POST /api/webhooks/screening` with header `x-kyc-signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`

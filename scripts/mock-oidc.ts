@@ -68,7 +68,7 @@ main{background:#fff;padding:2rem;width:22rem;box-shadow:0 2px 6px #0002}h1{font
 button{display:block;width:100%;text-align:left;margin:.5rem 0;padding:.7rem;border:1px solid #ccc;background:#fff;cursor:pointer;font-size:1rem}
 button:hover{background:#f0f6ff}small{display:block;color:#666;font-size:.75rem}p{color:#a4262c;font-size:.8rem}</style>
 <main><h1>Mock Microsoft sign-in</h1><p>Local development identity provider — not real Entra ID.</p>
-<form method="get" action="/authorize">${hidden}${buttons}</form></main>`);
+<form method="get" action="authorize">${hidden}${buttons}</form></main>`);
           return;
         }
         const redirectUri = p.get("redirect_uri") ?? "";
