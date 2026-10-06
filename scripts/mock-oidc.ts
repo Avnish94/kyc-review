@@ -60,7 +60,7 @@ async function main() {
           const buttons = IDENTITIES.map(
             (i) => `<button name="login_as" value="${i.id}">${esc(i.name)}<small>${esc(i.email)} · ${esc(i.roles.join(", ") || "no roles")}</small></button>`,
           ).join("");
-          res.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><title>Mock Entra ID</title>
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><title>Mock Entra ID</title>
 <style>body{font-family:system-ui;background:#f3f2f1;display:grid;place-items:center;min-height:100vh;margin:0}
 main{background:#fff;padding:2rem;width:22rem;box-shadow:0 2px 6px #0002}h1{font-size:1.2rem}
 button{display:block;width:100%;text-align:left;margin:.5rem 0;padding:.7rem;border:1px solid #ccc;background:#fff;cursor:pointer;font-size:1rem}
