@@ -9,6 +9,8 @@ import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
 const PORT = Number(process.env.MOCK_OIDC_PORT ?? 4010);
 const ISSUER = process.env.MOCK_OIDC_ISSUER ?? `http://localhost:${PORT}`;
+// Browser-facing base URL when the provider is reached through a proxy; back-channel endpoints stay on ISSUER.
+const PUBLIC_URL = process.env.MOCK_OIDC_PUBLIC_URL ?? ISSUER;
 const CLIENT_SECRET = process.env.MOCK_OIDC_CLIENT_SECRET ?? "mock-secret";
 
 const IDENTITIES = [
@@ -42,7 +44,7 @@ async function main() {
       if (url.pathname === "/.well-known/openid-configuration") {
         return json(res, 200, {
           issuer: ISSUER,
-          authorization_endpoint: `${ISSUER}/authorize`,
+          authorization_endpoint: `${PUBLIC_URL}/authorize`,
           token_endpoint: `${ISSUER}/token`,
           jwks_uri: `${ISSUER}/jwks`,
           response_types_supported: ["code"],

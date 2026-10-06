@@ -28,6 +28,11 @@ export function getOidcConfig(): OidcConfig | null {
   };
 }
 
+/** Absolute app URL; prefers APP_BASE_URL because request.url reflects the internal host behind a proxy. */
+export function appUrl(path: string, request: Request): URL {
+  return new URL(path, process.env.APP_BASE_URL || request.url);
+}
+
 /** Mock password login is on by default only when SSO is not configured. */
 export function isMockLoginEnabled(): boolean {
   const flag = process.env.AUTH_MOCK_ENABLED;

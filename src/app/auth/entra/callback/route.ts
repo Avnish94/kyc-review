@@ -1,13 +1,13 @@
 import { jwtVerify } from "jose";
 import { NextResponse, type NextRequest } from "next/server";
 import { setSessionCookie } from "@/lib/auth/cookies";
-import { exchangeCodeForClaims, getOidcConfig, identityFromClaims } from "@/lib/auth/oidc";
+import { appUrl, exchangeCodeForClaims, getOidcConfig, identityFromClaims } from "@/lib/auth/oidc";
 import { OIDC_STATE_COOKIE, sessionSecretKey } from "@/lib/auth/session";
 import { upsertSsoUser } from "@/lib/auth/sso";
 import { prisma } from "@/lib/db";
 
 function fail(request: NextRequest, error: string) {
-  const response = NextResponse.redirect(new URL(`/login?error=${error}`, request.url));
+  const response = NextResponse.redirect(appUrl(`/login?error=${error}`, request));
   response.cookies.delete({ name: OIDC_STATE_COOKIE, path: "/auth/entra" });
   return response;
 }
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     const result = await upsertSsoUser(prisma, identity);
     if (!result.ok) return fail(request, result.error);
 
-    const response = NextResponse.redirect(new URL("/cases", request.url));
+    const response = NextResponse.redirect(appUrl("/cases", request));
     response.cookies.delete({ name: OIDC_STATE_COOKIE, path: "/auth/entra" });
     await setSessionCookie(response.cookies, { userId: result.user.id, role: result.user.role });
     return response;
