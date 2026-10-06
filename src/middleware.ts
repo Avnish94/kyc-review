@@ -7,6 +7,8 @@ const PUBLIC_PREFIXES = ["/auth/", "/api/webhooks/", "/api/health"];
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) return NextResponse.next();
+  // Export routes verify their own short-lived download token.
+  if (pathname.startsWith("/api/export/") && request.nextUrl.searchParams.has("token")) return NextResponse.next();
 
   const session = await verifySession(request.cookies.get(SESSION_COOKIE)?.value);
   const isLoginPage = pathname === "/login";

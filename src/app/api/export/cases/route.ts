@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
-import { canExportData } from "@/lib/authz";
-import { getCurrentUser } from "@/lib/auth/current-user";
+import { authorizeExport } from "@/lib/auth/export-user";
 import { prisma } from "@/lib/db";
 import { toCsv } from "@/lib/reporting";
 
-export async function GET() {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!canExportData(user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function GET(request: Request) {
+  const auth = await authorizeExport(request, "cases");
+  if (auth instanceof NextResponse) return auth;
 
   const cases = await prisma.kycCase.findMany({
     orderBy: { caseNumber: "asc" },

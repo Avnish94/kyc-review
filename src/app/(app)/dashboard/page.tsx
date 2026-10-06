@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/db";
 import { RISK_LABELS, RISK_LEVELS } from "@/lib/kyc/types";
 import { getDashboardMetrics } from "@/lib/reporting";
+import { ExportButtons } from "./ExportButtons";
 
 export const dynamic = "force-dynamic";
 
@@ -35,10 +36,7 @@ export default async function DashboardPage() {
           <p className="text-sm text-slate-500">Workload, SLA and throughput across the review team.</p>
         </div>
         {canExportData(user.role) && (
-          <div className="flex gap-2 text-sm">
-            <a href="/api/export/cases" target="_blank" rel="noopener" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">Export cases (CSV)</a>
-            <a href="/api/export/audit" target="_blank" rel="noopener" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">Export audit log (CSV)</a>
-          </div>
+          <ExportButtons />
         )}
       </div>
 
