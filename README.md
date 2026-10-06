@@ -174,8 +174,8 @@ scheme to this contract.
 
 ### Teams notifications
 
-Set `TEAMS_WEBHOOK_URL` to a Teams *Workflows* "When a Teams webhook request is received" URL. Messages (submitted
-for approval, decision on your submission, high-risk screening alert) are written to `OutboxMessage` in the same
+Set `TEAMS_WEBHOOK_URL` to a Teams *Workflows* "When a Teams webhook request is received" URL. Messages (case submitted
+for approval, new high-risk screening alert) are written to `OutboxMessage` in the same
 transaction as the business change, sent right after, and retried by `npm run outbox:dispatch` up to 5 attempts.
 Without a URL they are marked `SKIPPED`. In-app notifications (bell icon) always work.
 
