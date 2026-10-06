@@ -48,7 +48,7 @@ npm run simulate:screening -- 3    # send 3 signed synthetic screening alerts to
 | --- | --- | --- | --- |
 | Analyst | `analyst@demo.local` | `analyst123` | Ava Chen — has assigned cases, including high-risk ones needing evidence |
 | Analyst | `analyst2@demo.local` | `analyst123` | Sam Patel — second analyst for assignment demos |
-| Admin | `admin@demo.local` | `admin123` | Marcus Reid — approvals, rules, exports |
+| Admin | `admin@demo.local` | `admin123` | Marcus Reid — approvals, rules |
 | Admin | `admin2@demo.local` | `admin123` | Dana Brooks — second Admin for four-eyes demos |
 
 With `npm run mock:oidc` running and the mock Entra variables set (see below), **Sign in with Microsoft** offers
@@ -64,7 +64,7 @@ Priya Nair (`KYC.Analyst`), Jordan Lee (`KYC.Admin`) and Casey Morgan (no role �
    a case *you* submitted to see the four-eyes block ("a different Admin must decide it").
 4. **Audit history** shows every step: actor, role, status change, recommendation, rule version, notes, uploads.
 5. **Rules** (Admin): change an SLA or the evidence matrix, publish v2, and show it applies immediately.
-6. **Dashboard**: aging, SLA compliance, throughput, reviewer stats, and CSV exports.
+6. **Dashboard**: aging, SLA compliance, throughput, and reviewer stats.
 7. Run `npm run simulate:screening -- 2` and show new cases arriving "via screening webhook".
 
 ## Features
@@ -82,7 +82,7 @@ Priya Nair (`KYC.Analyst`), Jordan Lee (`KYC.Admin`) and Casey Morgan (no role �
 | Identity | Mock password login and/or Microsoft Entra ID (OIDC + PKCE) with app-role → role mapping and just-in-time provisioning. |
 | Screening | `POST /api/webhooks/screening`, HMAC-signed with replay window, idempotent on event ID and alert ID. |
 | Notifications | In-app notifications; Teams Adaptive Cards via a transactional outbox with retries. |
-| Reporting | Dashboard (open, overdue, awaiting approval, SLA met, time to decision, aging, 14-day throughput, reviewer stats); Admin CSV export of cases and the audit log. |
+| Reporting | Dashboard (open, overdue, awaiting approval, SLA met, time to decision, aging, 14-day throughput, reviewer stats); Admin-only CSV export API for cases and the audit log (`/api/export/cases`, `/api/export/audit`); no UI button, since the embedded preview blocked browser downloads. |
 | Operations | `/api/health`, security headers, Dockerfile (standalone, non-root), GitHub Actions CI, Azure Bicep groundwork. |
 
 ## Business rules

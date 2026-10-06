@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 const DEMO_ACCOUNTS = [
   { role: "Analyst", email: "analyst@demo.local", password: "analyst123", note: "Works assigned cases; decides low/medium risk" },
   { role: "Analyst", email: "analyst2@demo.local", password: "analyst123", note: "Second analyst, for assignment demos" },
-  { role: "Admin", email: "admin@demo.local", password: "admin123", note: "Approves high-risk cases, edits rules, exports" },
+  { role: "Admin", email: "admin@demo.local", password: "admin123", note: "Approves high-risk cases, edits rules" },
   { role: "Admin", email: "admin2@demo.local", password: "admin123", note: "Second Admin, for four-eyes approval demos" },
 ];
 
