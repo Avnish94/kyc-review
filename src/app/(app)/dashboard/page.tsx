@@ -36,8 +36,8 @@ export default async function DashboardPage() {
         </div>
         {canExportData(user.role) && (
           <div className="flex gap-2 text-sm">
-            <a href="/api/export/cases" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">Export cases (CSV)</a>
-            <a href="/api/export/audit" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">Export audit log (CSV)</a>
+            <a href="/api/export/cases" target="_blank" rel="noopener" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">Export cases (CSV)</a>
+            <a href="/api/export/audit" target="_blank" rel="noopener" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">Export audit log (CSV)</a>
           </div>
         )}
       </div>
